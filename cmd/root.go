@@ -7,10 +7,11 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+var enablePGO, enablePropeller, enablePGOAndPropeller bool
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -46,7 +47,16 @@ var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("cmake " + strings.Join(args, " "))
+		c := LoadConfig("FDO_settings.yaml")
+		if enablePGO || enablePGOAndPropeller {
+			buildInstrumented(c)
+		}
+		if enablePropeller {
+			buildLabeled(c)
+		}
+		if enablePGOAndPropeller {
+			buildLabeledOnPGO(c)
+		}
 	},
 }
 
@@ -54,11 +64,18 @@ var testCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("config" + strings.Join(args, " "))
+		c := LoadConfig("FDO_settings.yaml")
+		if enablePGO || enablePGOAndPropeller {
+			testPGO(c)
+		}
+		if enablePropeller {
+			testPropeller(c)
+		}
+		if enablePGOAndPropeller {
+			// TODO: test PGO+Propeller
+		}
 	},
 }
-
-var sourceDir string
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -74,12 +91,12 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.FDO.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&enablePGO, "pgo", "", false, "enable pgo")
+	rootCmd.PersistentFlags().BoolVarP(&enablePropeller, "propeller", "", false, "enable propeller")
+	rootCmd.PersistentFlags().BoolVarP(&enablePGOAndPropeller, "pgo-and-propeller", "", false, "enable pgo and propeller")
+
 	configCmd.DisableFlagParsing = true
 
 	rootCmd.AddCommand(versionCmd, buildCmd, configCmd, testCmd)
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

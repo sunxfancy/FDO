@@ -31,3 +31,28 @@ func StoreConfig(file string, config Config) {
 		panic(err)
 	}
 }
+
+type TestScript struct {
+	Commands []string
+}
+
+func LoadTestScript(file string) TestScript {
+	c, err := ioutil.ReadFile(file)
+	if err != nil {
+		panic(err)
+	}
+	var script TestScript
+	yaml.Unmarshal(c, &script)
+	return script
+}
+
+func StoreTestScript(file string, script TestScript) {
+	c, err := yaml.Marshal(script)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(file, c, 0644)
+	if err != nil {
+		panic(err)
+	}
+}

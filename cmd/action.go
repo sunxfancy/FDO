@@ -52,13 +52,32 @@ func toLinkerFlags(kind string, flags []string) string {
 }
 
 // This is for PGO
-func buildInstrumented() {
+func buildInstrumented(c Config) {
 
 }
 
 // This is for Propeller
-func buildLabeled() {
+func buildLabeled(c Config) {
 
+}
+
+// This is for PGO+Propeller
+func buildLabeledOnPGO(c Config) {
+
+}
+
+func testPGO(c Config) {
+	testScript := LoadTestScript(c.Source + "/FDO_test.yaml")
+	for _, test := range testScript.Commands {
+		fmt.Print(test)
+	}
+}
+
+func testPropeller(c Config) {
+	testScript := LoadTestScript(c.Source + "/FDO_test.yaml")
+	for _, test := range testScript.Commands {
+		fmt.Print(test)
+	}
 }
 
 func ConfigDir(source string, args []string) {
