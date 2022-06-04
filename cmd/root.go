@@ -48,14 +48,15 @@ var buildCmd = &cobra.Command{
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c := LoadConfig("FDO_settings.yaml")
+		t := LoadTestScript(c.Source + "/FDO_test.yaml")
 		if enablePGO || enablePGOAndPropeller {
-			buildInstrumented(c)
+			buildInstrumented(c, t)
 		}
 		if enablePropeller {
-			buildLabeled(c)
+			buildLabeled(c, t)
 		}
 		if enablePGOAndPropeller {
-			buildLabeledOnPGO(c)
+			buildLabeledOnPGO(c, t)
 		}
 	},
 }
@@ -65,11 +66,13 @@ var testCmd = &cobra.Command{
 	Short: "Test the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c := LoadConfig("FDO_settings.yaml")
+		t := LoadTestScript(c.Source + "/FDO_test.yaml")
+
 		if enablePGO || enablePGOAndPropeller {
-			testPGO(c)
+			testPGO(c, t)
 		}
 		if enablePropeller {
-			testPropeller(c)
+			testPropeller(c, t)
 		}
 		if enablePGOAndPropeller {
 			// TODO: test PGO+Propeller

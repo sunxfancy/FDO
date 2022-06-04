@@ -6,13 +6,8 @@ package main
 
 import (
 	"FDO/cmd"
-	"os"
 )
 
 func main() {
-	if cmd.CheckRequiredToolSets() {
-		cmd.Execute()
-	} else {
-		os.Exit(1)
-	}
+	cmd.Execute()
 }

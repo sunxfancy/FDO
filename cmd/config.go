@@ -33,7 +33,9 @@ func StoreConfig(file string, config Config) {
 }
 
 type TestScript struct {
-	Commands []string
+	Commands      []string
+	ClangPath     string
+	PropellerPath string
 }
 
 func LoadTestScript(file string) TestScript {
