@@ -43,6 +43,9 @@ var configCmd = &cobra.Command{
 	},
 }
 
+var jobs int
+var target, config string
+
 var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build the project",
@@ -99,7 +102,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&enablePGOAndPropeller, "pgo-and-propeller", "", false, "enable pgo and propeller")
 
 	configCmd.DisableFlagParsing = true
-
 	rootCmd.AddCommand(versionCmd, buildCmd, configCmd, testCmd)
 
+	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 1, "number of jobs")
+	buildCmd.Flags().StringVarP(&target, "target", "t", "", "target of the build")
+	buildCmd.Flags().StringVarP(&config, "config", "", "", "config of the build")
 }

@@ -106,6 +106,19 @@ func (c CommandPath) RunCommand(cmd string, args ...string) {
 	fmt.Println(string(stdout))
 }
 
+func (c CommandPath) RunShell(cmd string) {
+	fmt.Println("RunShell: " + cmd)
+	s := strings.Split(cmd, " ")
+	command := exec.Command(s[0], s[1:]...)
+	command.Env = os.Environ()
+	command.Env = append(command.Env, "LLVM_PROFILE_FILE=demo.profraw")
+	stdout, err := command.CombinedOutput()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(stdout))
+}
+
 // This is for PGO
 func buildInstrumented(c Config, t TestScript) {
 	cmd := t.getCommand()
@@ -121,6 +134,7 @@ func buildInstrumented(c Config, t TestScript) {
 	}
 	args = append(args, c.Args...)
 	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", "--build", ".")
 	os.Chdir("..")
 }
 
@@ -135,6 +149,7 @@ func buildLabeled(c Config, t TestScript) {
 		toCMakeFlags("C", labelFlags(false)...), toCMakeFlags("CXX", labelFlags(false)...),
 	}
 	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", "--build", ".")
 	os.Chdir("..")
 }
 
@@ -144,9 +159,13 @@ func buildLabeledOnPGO(c Config, t TestScript) {
 }
 
 func testPGO(c Config, t TestScript) {
+	cmd := t.getCommand()
+	os.Chdir("instrumented")
+
 	for _, test := range t.Commands {
-		fmt.Print(test)
+		cmd.RunShell(test)
 	}
+	os.Chdir("..")
 }
 
 func testPropeller(c Config, t TestScript) {
