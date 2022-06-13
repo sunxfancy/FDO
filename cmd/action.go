@@ -106,12 +106,12 @@ func (c CommandPath) RunCommand(cmd string, args ...string) {
 	fmt.Println(string(stdout))
 }
 
-func (c CommandPath) RunShell(cmd string) {
+func (c CommandPath) RunShell(cmd string, env ...string) {
 	fmt.Println("RunShell: " + cmd)
 	s := strings.Split(cmd, " ")
 	command := exec.Command(s[0], s[1:]...)
 	command.Env = os.Environ()
-	command.Env = append(command.Env, "LLVM_PROFILE_FILE=demo.profraw")
+	command.Env = append(command.Env, env...)
 	stdout, err := command.CombinedOutput()
 	if err != nil {
 		fmt.Println(err)
@@ -162,15 +162,17 @@ func testPGO(c Config, t TestScript) {
 	cmd := t.getCommand()
 	os.Chdir("instrumented")
 
-	for _, test := range t.Commands {
-		cmd.RunShell(test)
+	for k, test := range t.Commands {
+		cmd.RunShell(test, "LLVM_PROFILE_FILE=PGO"+fmt.Sprint(k)+".profraw")
 	}
 	os.Chdir("..")
 }
 
 func testPropeller(c Config, t TestScript) {
-	for _, test := range t.Commands {
-		fmt.Print(test)
+	cmd := t.getCommand()
+	os.Chdir("labeled")
+	for k, test := range t.Commands {
+		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
 	}
 }
 

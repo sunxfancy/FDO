@@ -44,14 +44,19 @@ var configCmd = &cobra.Command{
 }
 
 var jobs int
-var target, config string
+var target, config, test_settings string
 
 var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c := LoadConfig("FDO_settings.yaml")
-		t := LoadTestScript(c.Source + "/FDO_test.yaml")
+		var t TestScript
+		if test_settings == "" {
+			t = LoadTestScript(c.Source + "/FDO_test.yaml")
+		} else {
+			t = LoadTestScript(test_settings)
+		}
 		if enablePGO || enablePGOAndPropeller {
 			buildInstrumented(c, t)
 		}
@@ -83,6 +88,13 @@ var testCmd = &cobra.Command{
 	},
 }
 
+var optCmd = &cobra.Command{
+	Use:   "opt",
+	Short: "Optimize the project",
+	Run: func(cmd *cobra.Command, args []string) {
+	},
+}
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
@@ -102,9 +114,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&enablePGOAndPropeller, "pgo-and-propeller", "", false, "enable pgo and propeller")
 
 	configCmd.DisableFlagParsing = true
-	rootCmd.AddCommand(versionCmd, buildCmd, configCmd, testCmd)
+	rootCmd.AddCommand(versionCmd, buildCmd, configCmd, testCmd, optCmd)
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 1, "number of jobs")
 	buildCmd.Flags().StringVarP(&target, "target", "t", "", "target of the build")
 	buildCmd.Flags().StringVarP(&config, "config", "", "", "config of the build")
+	buildCmd.Flags().StringVarP(&test_settings, "test-settings", "", "", "the path of test settings")
 }
