@@ -46,17 +46,22 @@ var configCmd = &cobra.Command{
 var jobs int
 var target, config, test_settings string
 
+func LoadSetings() (Config, TestScript) {
+	c := LoadConfig("FDO_settings.yaml")
+	var t TestScript
+	if test_settings == "" {
+		t = LoadTestScript(c.Source + "/FDO_test.yaml")
+	} else {
+		t = LoadTestScript(test_settings)
+	}
+	return c, t
+}
+
 var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		c := LoadConfig("FDO_settings.yaml")
-		var t TestScript
-		if test_settings == "" {
-			t = LoadTestScript(c.Source + "/FDO_test.yaml")
-		} else {
-			t = LoadTestScript(test_settings)
-		}
+		c, t := LoadSetings()
 		if enablePGO || enablePGOAndPropeller {
 			buildInstrumented(c, t)
 		}
@@ -73,9 +78,7 @@ var testCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		c := LoadConfig("FDO_settings.yaml")
-		t := LoadTestScript(c.Source + "/FDO_test.yaml")
-
+		c, t := LoadSetings()
 		if enablePGO || enablePGOAndPropeller {
 			testPGO(c, t)
 		}
@@ -83,7 +86,7 @@ var testCmd = &cobra.Command{
 			testPropeller(c, t)
 		}
 		if enablePGOAndPropeller {
-			// TODO: test PGO+Propeller
+			testPGOAndPropeller(c, t)
 		}
 	},
 }
@@ -92,6 +95,16 @@ var optCmd = &cobra.Command{
 	Use:   "opt",
 	Short: "Optimize the project",
 	Run: func(cmd *cobra.Command, args []string) {
+		c, t := LoadSetings()
+		if enablePGO || enablePGOAndPropeller {
+			optPGO(c, t)
+		}
+		if enablePropeller {
+			optPropeller(c, t)
+		}
+		if enablePGOAndPropeller {
+			optPGOAndPropeller(c, t)
+		}
 	},
 }
 
