@@ -29,6 +29,15 @@ func labelFlags(use_lto bool) []string {
 	return k
 }
 
+func labelUseFlags(use_lto bool) []string {
+	var k = []string{
+		"-funique-internal-linkage-names",
+		"-fbasic-block-sections=labels",
+	}
+
+	return k
+}
+
 func pgoFlags() []string {
 	return []string{}
 }
@@ -54,10 +63,11 @@ type CommandPath struct {
 	perfPath           string
 	llvm_profdata      string
 	createLlvmProfPath string
+	createRegProfPath  string
 }
 
 func (t TestScript) getCommand() (cmd CommandPath) {
-	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof"}
+	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof", "create_reg_prof"}
 	if t.ClangPath != "" {
 		cmd.clangPath = t.ClangPath + "/clang"
 		cmd.lldPath = t.ClangPath + "/ld.lld"
@@ -65,6 +75,9 @@ func (t TestScript) getCommand() (cmd CommandPath) {
 	}
 	if t.PropellerPath != "" {
 		cmd.createLlvmProfPath = t.PropellerPath + "/create_llvm_prof"
+	}
+	if t.RegPath != "" {
+		cmd.createRegProfPath = t.RegPath
 	}
 
 	var succes = checkToolSets(cmd.cmakePath, "--version") &&
@@ -95,6 +108,8 @@ func (c CommandPath) getPath(cmd string) string {
 		call = c.llvm_profdata
 	case "create_llvm_prof":
 		call = c.createLlvmProfPath
+	case "create_reg_prof":
+		call = c.createRegProfPath
 	}
 	return call
 }

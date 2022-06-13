@@ -37,6 +37,7 @@ type TestScript struct {
 	Binary        string
 	ClangPath     string
 	PropellerPath string
+	RegPath       string
 }
 
 func LoadTestScript(file string) TestScript {
