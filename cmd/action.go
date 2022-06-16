@@ -20,22 +20,42 @@ func checkToolSets(name string, args ...string) bool {
 	return true
 }
 
-func labelFlags(use_lto bool) []string {
+// t = full or thin
+func ltoFlags(t string) []string {
+	if t != "" {
+		t = "=" + t
+	}
+	return []string{
+		"-flto" + t,
+	}
+}
+
+func labelFlags(use_lto string) []string {
 	var k = []string{
 		"-funique-internal-linkage-names",
 		"-fbasic-block-sections=labels",
 	}
-
+	if use_lto != "" {
+		k = append(k, ltoFlags(use_lto)...)
+	}
 	return k
 }
 
-func labelUseFlags(use_lto bool) []string {
+func labelUseFlags(use_lto string) []string {
+	cluster, _ := filepath.Abs("../labeled/cluster.txt")
+
 	var k = []string{
 		"-funique-internal-linkage-names",
-		"-fbasic-block-sections=labels",
+		"-fbasic-block-sections=list=" + cluster,
 	}
-
+	if use_lto != "" {
+		k = append(k, ltoFlags(use_lto)...)
+	}
 	return k
+}
+
+func toCMakeLinkerFlags(kind string, flags ...string) string {
+	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=%s", kind, strings.Join(flags, " "))
 }
 
 func pgoFlags() []string {
@@ -138,6 +158,22 @@ func (c CommandPath) RunShell(cmd string, env ...string) {
 	fmt.Println(string(stdout))
 }
 
+func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []string) []string {
+	cmd := t.getCommand()
+	var args = []string{
+		c.Source,
+		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
+		toCMakeFlags("C", flags...), toCMakeFlags("CXX", flags...),
+		toCMakeLinkerFlags("EXE", linker_flags...), toCMakeLinkerFlags("SHARED", linker_flags...), toCMakeLinkerFlags("MODULE", linker_flags...),
+	}
+	if c.Install {
+		path, _ := os.Getwd()
+		args = append(args, "-DCMAKE_INSTALL_PREFIX="+path+"/install")
+	}
+	args = append(args, c.Args...)
+	return args
+}
+
 // This is for PGO
 func buildInstrumented(c Config, t TestScript) {
 	cmd := t.getCommand()
@@ -146,12 +182,10 @@ func buildInstrumented(c Config, t TestScript) {
 	if os.Chdir(path) != nil {
 		fmt.Println("can not change to the path: " + path)
 	}
-	var args = []string{
-		c.Source,
-		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
-		toCMakeFlags("C", "-fprofile-instr-generate"), toCMakeFlags("CXX", "-fprofile-instr-generate"),
-	}
-	args = append(args, c.Args...)
+	instrument_flags := []string{"-fprofile-instr-generate"}
+	linker_flags := []string{"-fuse-ld=lld"}
+
+	var args = createCMakeArgs(c, t, instrument_flags, linker_flags)
 	cmd.RunCommand("cmake", args...)
 	cmd.RunCommand("cmake", "--build", ".")
 	os.Chdir("..")
@@ -162,11 +196,12 @@ func buildLabeled(c Config, t TestScript) {
 	cmd := t.getCommand()
 	os.MkdirAll("labeled", 0777)
 	os.Chdir("labeled")
-	var args = []string{
-		c.Source,
-		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
-		toCMakeFlags("C", labelFlags(false)...), toCMakeFlags("CXX", labelFlags(false)...),
+
+	linker_flags := []string{"-fuse-ld=lld"}
+	if c.LTO != "" {
+		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections=labels")
 	}
+	var args = createCMakeArgs(c, t, labelFlags(c.LTO), linker_flags)
 	cmd.RunCommand("cmake", args...)
 	cmd.RunCommand("cmake", "--build", ".")
 	os.Chdir("..")
@@ -174,34 +209,66 @@ func buildLabeled(c Config, t TestScript) {
 
 // This is for PGO+Propeller
 func buildLabeledOnPGO(c Config, t TestScript) {
+	cmd := t.getCommand()
+	os.MkdirAll("labeled-pgo", 0777)
+	os.Chdir("labeled-pgo")
 
+	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
+	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	flags = append(flags, labelFlags(c.LTO)...)
+	linker_flags := []string{"-fuse-ld=lld"}
+	if c.LTO != "" {
+		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections=labels")
+	}
+	var args = createCMakeArgs(c, t, flags, linker_flags)
+	cmd.RunCommand("cmake", args...)
+	if c.Install {
+		cmd.RunCommand("cmake", "--build", ".", "--target", "install")
+	} else {
+		cmd.RunCommand("cmake", "--build", ".")
+	}
+	os.Chdir("..")
+}
+
+func moveToTestFolder(c Config, name string) {
+	os.Chdir(name)
+	if c.Install {
+		os.Chdir("install")
+	}
+}
+
+func moveBack(c Config) {
+	os.Chdir("..")
+	if c.Install {
+		os.Chdir("..")
+	}
 }
 
 func testPGO(c Config, t TestScript) {
 	cmd := t.getCommand()
-	os.Chdir("instrumented")
+	moveToTestFolder(c, "instrumented")
 	for k, test := range t.Commands {
 		cmd.RunShell(test, "LLVM_PROFILE_FILE=PGO"+fmt.Sprint(k)+".profraw")
 	}
-	os.Chdir("..")
+	moveBack(c)
 }
 
 func testPropeller(c Config, t TestScript) {
 	cmd := t.getCommand()
-	os.Chdir("labeled")
+	moveToTestFolder(c, "labeled")
 	for k, test := range t.Commands {
 		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
 	}
-	os.Chdir("..")
+	moveBack(c)
 }
 
 func testPGOAndPropeller(c Config, t TestScript) {
 	cmd := t.getCommand()
-	os.Chdir("pgo-labeled")
-	for _, test := range t.Commands {
-		cmd.RunShell(test)
+	moveToTestFolder(c, "labeled-pgo")
+	for k, test := range t.Commands {
+		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
 	}
-	os.Chdir("..")
+	moveBack(c)
 }
 
 func searchProfraw() []string {
@@ -239,12 +306,10 @@ func optPGO(c Config, t TestScript) {
 	}
 
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	var args = []string{
-		c.Source,
-		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
-		toCMakeFlags("C", "-fprofile-instr-use="+profdata_path),
-		toCMakeFlags("CXX", "-fprofile-instr-use="+profdata_path),
-	}
+	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	linker_flags := []string{"-fuse-ld=lld"}
+	var args = createCMakeArgs(c, t, flags, linker_flags)
+
 	args = append(args, c.Args...)
 	cmd.RunCommand("cmake", args...)
 	cmd.RunCommand("cmake", "--build", ".")
@@ -255,28 +320,56 @@ func optPropeller(c Config, t TestScript) {
 	// First, convert the profile data
 	cmd := t.getCommand()
 	os.Chdir("labeled")
+	binary_path, _ := filepath.Abs(t.Binary)
 	// TODO: here we need to handle multiple profiles
-	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+t.Binary,
+	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
 		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
 	os.Chdir("..")
 
 	os.MkdirAll("labeled-opt", 0777)
 	os.Chdir("labeled-opt")
-	var args = []string{
-		c.Source,
-		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
-		toCMakeFlags("C", labelFlags(false)...), toCMakeFlags("CXX", labelFlags(false)...),
+	symorder, _ := filepath.Abs("../labeled/symorder.txt")
+	linker_flags := []string{"-fuse-ld=lld", "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file=" + symorder}
+	if c.LTO != "" {
+		cluster, _ := filepath.Abs("../labeled/cluster.txt")
+		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
 	}
+	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
+
 	cmd.RunCommand("cmake", args...)
 	cmd.RunCommand("cmake", "--build", ".")
 	os.Chdir("..")
 }
 
 func optPGOAndPropeller(c Config, t TestScript) {
+	// First, convert the profile data
+	cmd := t.getCommand()
+	os.Chdir("labeled-pgo")
+	binary_path, _ := filepath.Abs(t.Binary)
+	// TODO: here we need to handle multiple profiles
+	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
+		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
+	os.Chdir("..")
 
+	os.MkdirAll("final-opt", 0777)
+	os.Chdir("final-opt")
+	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
+	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	flags = append(flags, labelFlags(c.LTO)...)
+	symorder, _ := filepath.Abs("../labeled-pgo/symorder.txt")
+	linker_flags := []string{"-fuse-ld=lld", "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file=" + symorder}
+	if c.LTO != "" {
+		cluster, _ := filepath.Abs("../labeled-pgo/cluster.txt")
+		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
+	}
+	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
+
+	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", "--build", ".")
+	os.Chdir("..")
 }
 
-func ConfigDir(source string, args []string) {
+func ConfigDir(source string, lto string, args []string) {
 	p, err := filepath.Abs(source)
 	if err != nil {
 		fmt.Println("can not get the path: " + source)
@@ -284,6 +377,7 @@ func ConfigDir(source string, args []string) {
 	var config = Config{
 		Source: p,
 		Args:   args,
+		LTO:    lto,
 	}
-	StoreConfig("FDO_settings.yaml", config)
+	config.StoreConfig("FDO_settings.yaml")
 }

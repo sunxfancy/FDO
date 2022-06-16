@@ -7,8 +7,10 @@ import (
 )
 
 type Config struct {
-	Source string
-	Args   []string
+	Source  string
+	Args    []string
+	LTO     string
+	Install bool
 }
 
 func LoadConfig(file string) Config {
@@ -21,7 +23,7 @@ func LoadConfig(file string) Config {
 	return config
 }
 
-func StoreConfig(file string, config Config) {
+func (config Config) StoreConfig(file string) {
 	c, err := yaml.Marshal(config)
 	if err != nil {
 		panic(err)

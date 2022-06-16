@@ -13,6 +13,10 @@ import (
 
 var enablePGO, enablePropeller, enablePGOAndPropeller bool
 
+var jobs int
+var target, config, test_settings, lto string
+var test_after_install bool
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "FDO",
@@ -39,12 +43,9 @@ var configCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		var source_dir = args[0]
-		ConfigDir(source_dir, args[1:])
+		ConfigDir(source_dir, lto, args[1:])
 	},
 }
-
-var jobs int
-var target, config, test_settings string
 
 func LoadSetings() (Config, TestScript) {
 	c := LoadConfig("FDO_settings.yaml")
@@ -62,6 +63,11 @@ var buildCmd = &cobra.Command{
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c, t := LoadSetings()
+		if lto != "" {
+			c.LTO = lto
+		}
+		c.Install = test_after_install
+		c.StoreConfig("FDO_settings.yaml")
 		if enablePGO || enablePGOAndPropeller {
 			buildInstrumented(c, t)
 		}
@@ -79,6 +85,10 @@ var testCmd = &cobra.Command{
 	Short: "Test the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c, t := LoadSetings()
+		if lto != "" {
+			c.LTO = lto
+			c.StoreConfig("FDO_settings.yaml")
+		}
 		if enablePGO || enablePGOAndPropeller {
 			testPGO(c, t)
 		}
@@ -96,6 +106,10 @@ var optCmd = &cobra.Command{
 	Short: "Optimize the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c, t := LoadSetings()
+		if lto != "" {
+			c.LTO = lto
+			c.StoreConfig("FDO_settings.yaml")
+		}
 		if enablePGO || enablePGOAndPropeller {
 			optPGO(c, t)
 		}
@@ -130,7 +144,9 @@ func init() {
 	rootCmd.AddCommand(versionCmd, buildCmd, configCmd, testCmd, optCmd)
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 1, "number of jobs")
+	buildCmd.Flags().StringVarP(&lto, "lto", "", "", "lto type (thin or full)")
 	buildCmd.Flags().StringVarP(&target, "target", "t", "", "target of the build")
 	buildCmd.Flags().StringVarP(&config, "config", "", "", "config of the build")
-	buildCmd.Flags().StringVarP(&test_settings, "test-settings", "", "", "the path of test settings")
+	buildCmd.Flags().StringVarP(&test_settings, "test-settings", "s", "", "the path of test settings")
+	buildCmd.Flags().BoolVarP(&test_after_install, "test-after-install", "i", false, "test after install")
 }
