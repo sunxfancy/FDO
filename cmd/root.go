@@ -47,27 +47,31 @@ var configCmd = &cobra.Command{
 	},
 }
 
-func LoadSetings() (Config, TestScript) {
-	c := LoadConfig("FDO_settings.yaml")
-	var t TestScript
-	if test_settings == "" {
-		t = LoadTestScript(c.Source + "/FDO_test.yaml")
-	} else {
-		t = LoadTestScript(test_settings)
-	}
-	return c, t
+func LoadSettings() (c Config, t TestScript) {
+	c = LoadConfig("FDO_settings.yaml")
+	t = LoadTestScript(c.TestCfg)
+	return
 }
 
 var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		c, t := LoadSetings()
+		// Load and store settings
+		c := LoadConfig("FDO_settings.yaml")
 		if lto != "" {
 			c.LTO = lto
 		}
+		if test_settings == "" {
+			c.TestCfg = c.Source + "/FDO_test.yaml"
+		} else {
+			c.TestCfg = test_settings
+		}
 		c.Install = test_after_install
+		t := LoadTestScript(c.TestCfg)
 		c.StoreConfig("FDO_settings.yaml")
+
+		// Build
 		if enablePGO || enablePGOAndPropeller {
 			buildInstrumented(c, t)
 		}
@@ -84,11 +88,7 @@ var testCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		c, t := LoadSetings()
-		if lto != "" {
-			c.LTO = lto
-			c.StoreConfig("FDO_settings.yaml")
-		}
+		c, t := LoadSettings()
 		if enablePGO || enablePGOAndPropeller {
 			testPGO(c, t)
 		}
@@ -105,11 +105,7 @@ var optCmd = &cobra.Command{
 	Use:   "opt",
 	Short: "Optimize the project",
 	Run: func(cmd *cobra.Command, args []string) {
-		c, t := LoadSetings()
-		if lto != "" {
-			c.LTO = lto
-			c.StoreConfig("FDO_settings.yaml")
-		}
+		c, t := LoadSettings()
 		if enablePGO || enablePGOAndPropeller {
 			optPGO(c, t)
 		}

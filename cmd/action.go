@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -141,8 +143,13 @@ func (c CommandPath) PrintCommand(cmd string, args ...string) {
 func (c CommandPath) RunCommand(cmd string, args ...string) {
 	c.PrintCommand(cmd, args...)
 	command := exec.Command(c.getPath(cmd), args...)
-	stdout, _ := command.CombinedOutput()
-	fmt.Println(string(stdout))
+
+	var stdBuffer bytes.Buffer
+	mw := io.MultiWriter(os.Stdout, &stdBuffer)
+
+	command.Stdout = mw
+	command.Stderr = mw
+	command.Run()
 }
 
 func (c CommandPath) RunShell(cmd string, env ...string) {
@@ -151,11 +158,13 @@ func (c CommandPath) RunShell(cmd string, env ...string) {
 	command := exec.Command(s[0], s[1:]...)
 	command.Env = os.Environ()
 	command.Env = append(command.Env, env...)
-	stdout, err := command.CombinedOutput()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(string(stdout))
+
+	var stdBuffer bytes.Buffer
+	mw := io.MultiWriter(os.Stdout, &stdBuffer)
+
+	command.Stdout = mw
+	command.Stderr = mw
+	command.Run()
 }
 
 func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []string) []string {
@@ -174,6 +183,14 @@ func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []stri
 	return args
 }
 
+func (cmd CommandPath) runCMakeBuild(c Config) {
+	if c.Install {
+		cmd.RunCommand("cmake", "--build", ".", "-j", "8", "--target", "install")
+	} else {
+		cmd.RunCommand("cmake", "--build", ".", "-j", "8")
+	}
+}
+
 // This is for PGO
 func buildInstrumented(c Config, t TestScript) {
 	cmd := t.getCommand()
@@ -187,7 +204,7 @@ func buildInstrumented(c Config, t TestScript) {
 
 	var args = createCMakeArgs(c, t, instrument_flags, linker_flags)
 	cmd.RunCommand("cmake", args...)
-	cmd.RunCommand("cmake", "--build", ".")
+	cmd.runCMakeBuild(c)
 	os.Chdir("..")
 }
 
@@ -203,7 +220,8 @@ func buildLabeled(c Config, t TestScript) {
 	}
 	var args = createCMakeArgs(c, t, labelFlags(c.LTO), linker_flags)
 	cmd.RunCommand("cmake", args...)
-	cmd.RunCommand("cmake", "--build", ".")
+	cmd.runCMakeBuild(c)
+
 	os.Chdir("..")
 }
 
@@ -222,11 +240,8 @@ func buildLabeledOnPGO(c Config, t TestScript) {
 	}
 	var args = createCMakeArgs(c, t, flags, linker_flags)
 	cmd.RunCommand("cmake", args...)
-	if c.Install {
-		cmd.RunCommand("cmake", "--build", ".", "--target", "install")
-	} else {
-		cmd.RunCommand("cmake", "--build", ".")
-	}
+	cmd.runCMakeBuild(c)
+
 	os.Chdir("..")
 }
 
@@ -312,7 +327,8 @@ func optPGO(c Config, t TestScript) {
 
 	args = append(args, c.Args...)
 	cmd.RunCommand("cmake", args...)
-	cmd.RunCommand("cmake", "--build", ".")
+	cmd.runCMakeBuild(c)
+
 	os.Chdir("..")
 }
 
@@ -337,7 +353,8 @@ func optPropeller(c Config, t TestScript) {
 	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
 
 	cmd.RunCommand("cmake", args...)
-	cmd.RunCommand("cmake", "--build", ".")
+	cmd.runCMakeBuild(c)
+
 	os.Chdir("..")
 }
 
@@ -365,7 +382,8 @@ func optPGOAndPropeller(c Config, t TestScript) {
 	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
 
 	cmd.RunCommand("cmake", args...)
-	cmd.RunCommand("cmake", "--build", ".")
+	cmd.runCMakeBuild(c)
+
 	os.Chdir("..")
 }
 
