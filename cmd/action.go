@@ -34,6 +34,7 @@ func ltoFlags(t string) []string {
 
 func labelFlags(use_lto string) []string {
 	var k = []string{
+		"-fuse-ld=lld",
 		"-funique-internal-linkage-names",
 		"-fbasic-block-sections=labels",
 	}
@@ -167,6 +168,29 @@ func (c CommandPath) RunShell(cmd string, env ...string) {
 	command.Run()
 }
 
+func merge_args(args []string) []string {
+	var ans []string
+
+	m := make(map[string]string)
+	for _, v := range args {
+		s := strings.SplitN(v, "=", 2)
+		if len(s) != 2 {
+			ans = append(ans, v)
+			continue
+		}
+		_, prs := m[s[0]]
+		if !prs {
+			m[s[0]] = s[1]
+		} else {
+			m[s[0]] = m[s[0]] + " " + s[1]
+		}
+	}
+	for k, v := range m {
+		ans = append(ans, k+"="+v)
+	}
+	return ans
+}
+
 func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []string) []string {
 	cmd := t.getCommand()
 	var args = []string{
@@ -180,7 +204,7 @@ func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []stri
 		args = append(args, "-DCMAKE_INSTALL_PREFIX="+path+"/install")
 	}
 	args = append(args, c.Args...)
-	return args
+	return merge_args(args)
 }
 
 func (cmd CommandPath) runCMakeBuild(c Config) {
@@ -232,7 +256,7 @@ func buildLabeledOnPGO(c Config, t TestScript) {
 	os.Chdir("labeled-pgo")
 
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	flags := []string{"-fuse-ld=lld", "-fprofile-instr-use=" + profdata_path}
 	flags = append(flags, labelFlags(c.LTO)...)
 	linker_flags := []string{"-fuse-ld=lld"}
 	if c.LTO != "" {
