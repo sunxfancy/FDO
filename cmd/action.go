@@ -89,18 +89,25 @@ type CommandPath struct {
 	createRegProfPath  string
 }
 
-func (t TestScript) getCommand() (cmd CommandPath) {
+func (c Config) getAbs(p string) string {
+	if !filepath.IsAbs(p) {
+		p, _ = filepath.Abs(c.TestCfg + "/../" + p)
+	}
+	return p
+}
+
+func (t TestScript) getCommand(c Config) (cmd CommandPath) {
 	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof", "create_reg_prof"}
 	if t.ClangPath != "" {
-		cmd.clangPath = t.ClangPath + "/clang"
-		cmd.lldPath = t.ClangPath + "/ld.lld"
-		cmd.llvm_profdata = t.ClangPath + "/llvm-profdata"
+		cmd.clangPath = c.getAbs(t.ClangPath + "/clang")
+		cmd.lldPath = c.getAbs(t.ClangPath + "/ld.lld")
+		cmd.llvm_profdata = c.getAbs(t.ClangPath + "/llvm-profdata")
 	}
 	if t.PropellerPath != "" {
-		cmd.createLlvmProfPath = t.PropellerPath + "/create_llvm_prof"
+		cmd.createLlvmProfPath = c.getAbs(t.PropellerPath + "/create_llvm_prof")
 	}
 	if t.RegPath != "" {
-		cmd.createRegProfPath = t.RegPath
+		cmd.createRegProfPath = c.getAbs(t.RegPath)
 	}
 
 	var succes = checkToolSets(cmd.cmakePath, "--version") &&
@@ -192,7 +199,7 @@ func merge_args(args []string) []string {
 }
 
 func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []string) []string {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	var args = []string{
 		c.Source,
 		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
@@ -217,7 +224,7 @@ func (cmd CommandPath) runCMakeBuild(c Config) {
 
 // This is for PGO
 func buildInstrumented(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.MkdirAll("instrumented", 0777)
 	path, _ := filepath.Abs("./instrumented")
 	if os.Chdir(path) != nil {
@@ -234,7 +241,7 @@ func buildInstrumented(c Config, t TestScript) {
 
 // This is for Propeller
 func buildLabeled(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.MkdirAll("labeled", 0777)
 	os.Chdir("labeled")
 
@@ -251,7 +258,7 @@ func buildLabeled(c Config, t TestScript) {
 
 // This is for PGO+Propeller
 func buildLabeledOnPGO(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.MkdirAll("labeled-pgo", 0777)
 	os.Chdir("labeled-pgo")
 
@@ -284,7 +291,7 @@ func moveBack(c Config) {
 }
 
 func testPGO(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	moveToTestFolder(c, "instrumented")
 	for k, test := range t.Commands {
 		cmd.RunShell(test, "LLVM_PROFILE_FILE=PGO"+fmt.Sprint(k)+".profraw")
@@ -293,7 +300,7 @@ func testPGO(c Config, t TestScript) {
 }
 
 func testPropeller(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	moveToTestFolder(c, "labeled")
 	for k, test := range t.Commands {
 		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
@@ -302,7 +309,7 @@ func testPropeller(c Config, t TestScript) {
 }
 
 func testPGOAndPropeller(c Config, t TestScript) {
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	moveToTestFolder(c, "labeled-pgo")
 	for k, test := range t.Commands {
 		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
@@ -329,7 +336,7 @@ func searchProfraw() []string {
 
 func optPGO(c Config, t TestScript) {
 	// First, combine the profiles
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.Chdir("instrumented")
 	var files = searchProfraw()
 	var nargs = []string{"merge", "-output=PGO.profdata"}
@@ -358,7 +365,7 @@ func optPGO(c Config, t TestScript) {
 
 func optPropeller(c Config, t TestScript) {
 	// First, convert the profile data
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.Chdir("labeled")
 	binary_path, _ := filepath.Abs(t.Binary)
 	// TODO: here we need to handle multiple profiles
@@ -384,7 +391,7 @@ func optPropeller(c Config, t TestScript) {
 
 func optPGOAndPropeller(c Config, t TestScript) {
 	// First, convert the profile data
-	cmd := t.getCommand()
+	cmd := t.getCommand(c)
 	os.Chdir("labeled-pgo")
 	binary_path, _ := filepath.Abs(t.Binary)
 	// TODO: here we need to handle multiple profiles
