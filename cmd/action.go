@@ -269,6 +269,13 @@ func buildLabeledOnPGO(c Config, t TestScript) {
 	if c.LTO != "" {
 		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections=labels")
 	}
+	if c.LTO != "" && c.IPRA {
+		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
+	}
+	if c.LTO == "" && c.IPRA {
+		flags = append(flags, "-enable-ipra")
+	}
+
 	var args = createCMakeArgs(c, t, flags, linker_flags)
 	cmd.RunCommand("cmake", args...)
 	cmd.runCMakeBuild(c)
@@ -354,6 +361,12 @@ func optPGO(c Config, t TestScript) {
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
 	flags := []string{"-fprofile-instr-use=" + profdata_path}
 	linker_flags := []string{"-fuse-ld=lld"}
+	if c.LTO != "" && c.IPRA {
+		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
+	}
+	if c.LTO == "" && c.IPRA {
+		flags = append(flags, "-enable-ipra")
+	}
 	var args = createCMakeArgs(c, t, flags, linker_flags)
 
 	args = append(args, c.Args...)
@@ -381,7 +394,14 @@ func optPropeller(c Config, t TestScript) {
 		cluster, _ := filepath.Abs("../labeled/cluster.txt")
 		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
 	}
-	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
+	if c.LTO != "" && c.IPRA {
+		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
+	}
+	flags := labelUseFlags(c.LTO)
+	if c.LTO == "" && c.IPRA {
+		flags = append(flags, "-enable-ipra")
+	}
+	var args = createCMakeArgs(c, t, flags, linker_flags)
 
 	cmd.RunCommand("cmake", args...)
 	cmd.runCMakeBuild(c)

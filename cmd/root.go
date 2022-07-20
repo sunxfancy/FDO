@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -15,7 +14,7 @@ var enablePGO, enablePropeller, enablePGOAndPropeller bool
 
 var jobs int
 var target, config, test_settings, lto string
-var test_after_install bool
+var test_after_install, ipra bool
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -68,6 +67,7 @@ var buildCmd = &cobra.Command{
 			c.TestCfg = test_settings
 		}
 		c.Install = test_after_install
+		c.IPRA = ipra
 		t := LoadTestScript(c.TestCfg)
 		c.StoreConfig("FDO_settings.yaml")
 
@@ -141,6 +141,7 @@ func init() {
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 1, "number of jobs")
 	buildCmd.Flags().StringVarP(&lto, "lto", "", "", "lto type (thin or full)")
+	buildCmd.Flags().BoolVarP(&ipra, "ipra", "", false, "enable ipra")
 	buildCmd.Flags().StringVarP(&target, "target", "t", "", "target of the build")
 	buildCmd.Flags().StringVarP(&config, "config", "", "", "config of the build")
 	buildCmd.Flags().StringVarP(&test_settings, "test-settings", "s", "", "the path of test settings")

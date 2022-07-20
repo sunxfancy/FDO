@@ -12,6 +12,7 @@ type Config struct {
 	LTO     string
 	TestCfg string
 	Install bool
+	IPRA    bool
 }
 
 func LoadConfig(file string) Config {
