@@ -57,20 +57,6 @@ func labelUseFlags(use_lto string) []string {
 	return k
 }
 
-func toCMakeCompiler(lang string, path string) string {
-	return fmt.Sprintf("-DCMAKE_%s_COMPILER=%s", lang, path)
-}
-
-// lang = C or CXX
-func toCMakeFlags(lang string, flags ...string) string {
-	return fmt.Sprintf("-DCMAKE_%s_FLAGS=%s", lang, strings.Join(flags, " "))
-}
-
-// kind = EXE or SHARED or MODULE
-func toCMakeLinkerFlags(kind string, flags ...string) string {
-	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=%s", kind, strings.Join(flags, " "))
-}
-
 type CommandPath struct {
 	cmakePath          string
 	clangPath          string
@@ -79,17 +65,24 @@ type CommandPath struct {
 	llvm_profdata      string
 	createLlvmProfPath string
 	createRegProfPath  string
+	dryrun             bool
 }
 
 func (c Config) getAbs(p string) string {
 	if !filepath.IsAbs(p) {
-		p, _ = filepath.Abs(c.TestCfg + "/../" + p)
+		cwd, _ := os.Getwd()
+		fmt.Println("currentPath: ", cwd)
+		fmt.Println("TestCfg: ", c.TestCfg)
+		test, _ := filepath.Abs(filepath.Dir(c.TestCfg))
+		fmt.Println("p: ", test)
+		p, _ = filepath.Abs(test + "/" + p)
+		fmt.Println("p: ", p)
 	}
 	return p
 }
 
 func (t TestScript) getCommand(c Config) (cmd CommandPath) {
-	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof", "create_reg_prof"}
+	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof", "create_reg_prof", c.DryRun}
 	if t.ClangPath != "" {
 		cmd.clangPath = c.getAbs(t.ClangPath + "/clang")
 		cmd.lldPath = c.getAbs(t.ClangPath + "/ld.lld")
@@ -153,17 +146,46 @@ func RunWithMultiWriter(command *exec.Cmd) {
 
 func (c CommandPath) RunCommand(cmd string, args ...string) {
 	c.PrintCommand(cmd, args...)
+	if c.dryrun {
+		return
+	}
 	command := exec.Command(c.getPath(cmd), args...)
 	RunWithMultiWriter(command)
 }
 
 func (c CommandPath) RunShell(cmd string, env ...string) {
-	fmt.Println("RunShell: " + cmd)
+	c.PrintCommand("RunShell: " + cmd)
+	if c.dryrun {
+		return
+	}
 	s := strings.Split(cmd, " ")
 	command := exec.Command(c.getPath(s[0]), s[1:]...)
 	command.Env = os.Environ()
 	command.Env = append(command.Env, env...)
 	RunWithMultiWriter(command)
+}
+
+func (c CommandPath) RunCMakeBuild(cfg Config) {
+	numOfCores := runtime.NumCPU()
+	if cfg.Install {
+		c.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores), "--target", "install")
+	} else {
+		c.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores))
+	}
+}
+
+func toCMakeCompiler(lang string, path string) string {
+	return fmt.Sprintf("-DCMAKE_%s_COMPILER=%s", lang, path)
+}
+
+// lang = C or CXX
+func toCMakeFlags(lang string, flags ...string) string {
+	return fmt.Sprintf("-DCMAKE_%s_FLAGS=%s", lang, strings.Join(flags, " "))
+}
+
+// kind = EXE or SHARED or MODULE
+func toCMakeLinkerFlags(kind string, flags ...string) string {
+	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=%s", kind, strings.Join(flags, " "))
 }
 
 // This function will merge the arguments which has the same key
@@ -191,89 +213,147 @@ func merge_args(args []string) []string {
 	return ans
 }
 
-func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []string) []string {
-	cmd := t.getCommand(c)
+type CMakeFlags struct {
+	Config
+	flags        []string
+	linker_flags []string
+	install_path string
+}
+
+func (f CMakeFlags) createCMakeArgs(cmd CommandPath, t TestScript) []string {
 	var args = []string{
-		c.Source,
+		f.Source,
 		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
-		toCMakeFlags("C", flags...), toCMakeFlags("CXX", flags...),
-		toCMakeLinkerFlags("EXE", linker_flags...), toCMakeLinkerFlags("SHARED", linker_flags...), toCMakeLinkerFlags("MODULE", linker_flags...),
+		toCMakeFlags("C", f.flags...), toCMakeFlags("CXX", f.flags...),
+		toCMakeLinkerFlags("EXE", f.linker_flags...), toCMakeLinkerFlags("SHARED", f.linker_flags...), toCMakeLinkerFlags("MODULE", f.linker_flags...),
 	}
-	if c.Install {
-		path, _ := os.Getwd()
-		args = append(args, "-DCMAKE_INSTALL_PREFIX="+path+"/install")
+	if f.install_path != "" {
+		args = append(args, "-DCMAKE_INSTALL_PREFIX="+f.install_path)
 	}
-	args = append(args, c.Args...)
+
+	args = append(args, f.Args...)
 	return merge_args(args)
 }
 
-func (cmd CommandPath) runCMakeBuild(c Config) {
-	numOfCores := runtime.NumCPU()
-	if c.Install {
-		cmd.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores), "--target", "install")
-	} else {
-		cmd.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores))
+func createDefaultFlags(c Config) CMakeFlags {
+	return CMakeFlags{c, []string{}, []string{"-fuse-ld=lld"}, ""}
+}
+
+func (f CMakeFlags) PGO(stage string) CMakeFlags {
+	if stage == "instrumented" {
+		f.flags = append(f.flags, fmt.Sprint("-f", f.Profile, "-generate"))
+		if f.Install {
+			path, _ := os.Getwd()
+			f.install_path = path + "/instrumented/install"
+		}
+	}
+	if stage == "pgo-opt" {
+		profdata_path := ""
+		if f.Install {
+			profdata_path, _ = filepath.Abs("../instrumented/install/PGO.profdata")
+		} else {
+			profdata_path, _ = filepath.Abs("../instrumented/PGO.profdata")
+		}
+		f.flags = append(f.flags, fmt.Sprint("-f", f.Profile, "-use="+profdata_path))
+	}
+
+	return f
+}
+
+func (f CMakeFlags) IPRA() CMakeFlags {
+	if f.lto == "" && f.ipra { // disable LTO
+		f.flags = append(f.flags, "-enable-ipra")
+	}
+	if f.lto != "" && f.ipra { // enable LTO
+		f.linker_flags = append(f.linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
+	}
+	return f
+}
+
+func (f CMakeFlags) LTO() CMakeFlags {
+	if f.lto == "" {
+		f.flags = append(f.flags, "-flto="+f.lto)
+	}
+	return f
+}
+
+func (f CMakeFlags) Propeller(stage string) CMakeFlags {
+	if stage == "labeled" || stage == "labeled-opt" {
+		f.flags = append(f.flags, "-funique-internal-linkage-names", "-fbasic-block-sections=labels")
+		if f.lto != "" { // enable LTO
+			f.linker_flags = append(f.linker_flags, "-Wl,--lto-basic-block-sections=labels")
+		}
+		if f.Install {
+			path, _ := os.Getwd()
+			f.install_path = path + "/" + stage + "/install"
+		}
+	}
+	if stage == "propeller-opt" || stage == "final-opt" {
+		profdata_path := ""
+		labeled := "labeled"
+		if stage == "final-opt" {
+			labeled += "-pgo"
+		}
+		if f.Install {
+			profdata_path, _ = filepath.Abs("../" + labeled + "/install/")
+		} else {
+			profdata_path, _ = filepath.Abs("../" + labeled + "/")
+		}
+		symorder := profdata_path + "symorder.txt"
+		cluster := profdata_path + "cluster.txt"
+
+		f.flags = append(f.flags, "-funique-internal-linkage-names", "-fbasic-block-sections=list="+cluster)
+		f.linker_flags = append(f.linker_flags, "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file="+symorder)
+
+		if f.lto != "" {
+			f.linker_flags = append(f.linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
+		}
+	}
+	return f
+}
+
+func createAndMoveToFolder(name string) {
+	if os.MkdirAll(name, 0777) != nil {
+		fmt.Println("mkdir faild: " + name)
+	}
+	path, _ := filepath.Abs("./" + name)
+	if os.Chdir(path) != nil {
+		fmt.Println("can not change to the path: " + path)
 	}
 }
 
 // This is for PGO
 func buildInstrumented(c Config, t TestScript) {
 	cmd := t.getCommand(c)
-	os.MkdirAll("instrumented", 0777)
-	path, _ := filepath.Abs("./instrumented")
-	if os.Chdir(path) != nil {
-		fmt.Println("can not change to the path: " + path)
-	}
-	instrument_flags := []string{fmt.Sprint("-f", c.Profile, "-generate")}
-	linker_flags := []string{"-fuse-ld=lld"}
-
-	var args = createCMakeArgs(c, t, instrument_flags, linker_flags)
+	createAndMoveToFolder("instrumented")
+	flags := createDefaultFlags(c).PGO("instrumented").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
 // This is for Propeller
 func buildLabeled(c Config, t TestScript) {
 	cmd := t.getCommand(c)
-	os.MkdirAll("labeled", 0777)
-	os.Chdir("labeled")
-
-	linker_flags := []string{"-fuse-ld=lld"}
-	if c.LTO != "" {
-		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections=labels")
-	}
-	var args = createCMakeArgs(c, t, labelFlags(c.LTO), linker_flags)
+	createAndMoveToFolder("labeled")
+	flags := createDefaultFlags(c).Propeller("labeled").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
-
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
 // This is for PGO+Propeller
 func buildLabeledOnPGO(c Config, t TestScript) {
 	cmd := t.getCommand(c)
-	os.MkdirAll("labeled-pgo", 0777)
-	os.Chdir("labeled-pgo")
+	createAndMoveToFolder("labeled-pgo")
 
-	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{"-fuse-ld=lld", fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
-	flags = append(flags, labelFlags(c.LTO)...)
-	linker_flags := []string{"-fuse-ld=lld"}
-	if c.LTO != "" {
-		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections=labels")
-	}
-	if c.LTO != "" && c.IPRA {
-		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
-	}
-	if c.LTO == "" && c.IPRA {
-		flags = append(flags, "-enable-ipra")
-	}
+	flags := createDefaultFlags(c).PGO("pgo-opt").Propeller("labeled-opt").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 
-	var args = createCMakeArgs(c, t, flags, linker_flags)
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
-
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
@@ -294,9 +374,15 @@ func moveBack(c Config) {
 func testPGO(c Config, t TestScript) {
 	cmd := t.getCommand(c)
 	moveToTestFolder(c, "instrumented")
+	// First, run those tests
 	for k, test := range t.Commands {
 		cmd.RunShell(test, fmt.Sprint("LLVM_PROFILE_FILE=PGO", k, ".profraw"))
 	}
+	// Then, combine the profiles
+	var files = searchProfraw()
+	var nargs = []string{"merge", "-output=PGO.profdata"}
+	nargs = append(nargs, files...)
+	cmd.RunCommand("llvm-profdata", nargs...)
 	moveBack(c)
 }
 
@@ -306,15 +392,23 @@ func testPropeller(c Config, t TestScript) {
 	for k, test := range t.Commands {
 		cmd.RunShell(fmt.Sprint("perf record -e cycles:u -j any,u -o Propeller", k, ".data -- ", test))
 	}
+	binary_path, _ := filepath.Abs(t.Binary)
+	// TODO: here we need to handle multiple profiles
+	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
+		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
 	moveBack(c)
 }
 
-func testPGOAndPropeller(c Config, t TestScript) {
+func testPropellerOnPGO(c Config, t TestScript) {
 	cmd := t.getCommand(c)
 	moveToTestFolder(c, "labeled-pgo")
 	for k, test := range t.Commands {
 		cmd.RunShell(fmt.Sprint("perf record -e cycles:u -j any,u -o Propeller", k, ".data -- ", test))
 	}
+	binary_path, _ := filepath.Abs(t.Binary)
+	// TODO: here we need to handle multiple profiles
+	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
+		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
 	moveBack(c)
 }
 
@@ -335,100 +429,40 @@ func searchProfraw() []string {
 	return files
 }
 
+// build the optimized binary using PGO.profdata
 func optPGO(c Config, t TestScript) {
-	// First, combine the profiles
 	cmd := t.getCommand(c)
-	os.Chdir("instrumented")
-	var files = searchProfraw()
-	var nargs = []string{"merge", "-output=PGO.profdata"}
-	nargs = append(nargs, files...)
-	cmd.RunCommand("llvm-profdata", nargs...)
-	os.Chdir("..")
+	createAndMoveToFolder("pgo-opt")
 
-	// Then, build the optimized binary using PGO.profdata
-	os.MkdirAll("instrumented-opt", 0777)
-	path, _ := filepath.Abs("./instrumented-opt")
-	if os.Chdir(path) != nil {
-		fmt.Println("can not change to the path: " + path)
-	}
+	flags := createDefaultFlags(c).PGO("pgo-opt").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 
-	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
-	linker_flags := []string{"-fuse-ld=lld"}
-	if c.LTO != "" && c.IPRA {
-		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
-	}
-	if c.LTO == "" && c.IPRA {
-		flags = append(flags, "-enable-ipra")
-	}
-	var args = createCMakeArgs(c, t, flags, linker_flags)
-
-	args = append(args, c.Args...)
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
-
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
 func optPropeller(c Config, t TestScript) {
 	// First, convert the profile data
 	cmd := t.getCommand(c)
-	os.Chdir("labeled")
-	binary_path, _ := filepath.Abs(t.Binary)
-	// TODO: here we need to handle multiple profiles
-	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
-		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
-	os.Chdir("..")
-
-	os.MkdirAll("labeled-opt", 0777)
-	os.Chdir("labeled-opt")
-	symorder, _ := filepath.Abs("../labeled/symorder.txt")
-	linker_flags := []string{"-fuse-ld=lld", "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file=" + symorder}
-	if c.LTO != "" {
-		cluster, _ := filepath.Abs("../labeled/cluster.txt")
-		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
-	}
-	if c.LTO != "" && c.IPRA {
-		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
-	}
-	flags := labelUseFlags(c.LTO)
-	if c.LTO == "" && c.IPRA {
-		flags = append(flags, "-enable-ipra")
-	}
-	var args = createCMakeArgs(c, t, flags, linker_flags)
+	createAndMoveToFolder("labeled-opt")
+	flags := createDefaultFlags(c).Propeller("propeller-opt").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
-
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
 func optPGOAndPropeller(c Config, t TestScript) {
 	// First, convert the profile data
 	cmd := t.getCommand(c)
-	os.Chdir("labeled-pgo")
-	binary_path, _ := filepath.Abs(t.Binary)
-	// TODO: here we need to handle multiple profiles
-	cmd.RunCommand("create_llvm_prof", "--format=propeller", "--binary="+binary_path,
-		"--profile=Propeller0.data", "--out=cluster.txt", "--propeller_symorder=symorder.txt")
-	os.Chdir("..")
-
-	os.MkdirAll("final-opt", 0777)
-	os.Chdir("final-opt")
-	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
-	flags = append(flags, labelFlags(c.LTO)...)
-	symorder, _ := filepath.Abs("../labeled-pgo/symorder.txt")
-	linker_flags := []string{"-fuse-ld=lld", "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file=" + symorder}
-	if c.LTO != "" {
-		cluster, _ := filepath.Abs("../labeled-pgo/cluster.txt")
-		linker_flags = append(linker_flags, "-Wl,--lto-basic-block-sections="+cluster)
-	}
-	var args = createCMakeArgs(c, t, labelUseFlags(c.LTO), linker_flags)
+	createAndMoveToFolder("final-pgo")
+	flags := createDefaultFlags(c).PGO("pgo-opt").Propeller("final-opt").IPRA().LTO()
+	var args = flags.createCMakeArgs(cmd, t)
 
 	cmd.RunCommand("cmake", args...)
-	cmd.runCMakeBuild(c)
-
+	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
@@ -440,7 +474,7 @@ func ConfigDir(source string, lto string, args []string) {
 	var config = Config{
 		Source: p,
 		Args:   args,
-		LTO:    lto,
+		lto:    lto,
 	}
 	config.StoreConfig("FDO_settings.yaml")
 }

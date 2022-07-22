@@ -9,11 +9,12 @@ import (
 type Config struct {
 	Source  string
 	Args    []string
-	LTO     string
+	lto     string
 	Profile string
 	TestCfg string
 	Install bool
-	IPRA    bool
+	ipra    bool
+	DryRun  bool
 }
 
 func LoadConfig(file string) Config {

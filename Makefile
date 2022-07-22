@@ -1,24 +1,27 @@
 PWD=$(shell pwd)
-LLVM=/home/xiaofan/Workspace/propeller-opt-clang/source.dir/llvm-project/llvm
+LLVM=$(PWD)/../LLVM-IPRA/llvm
+FDO=$(PWD)/../install/FDO
 run:
 	make clang
-	cd build-clang && ../FDO build --lto=thin -s=../clang/FDO_test.yaml -i --pgo --propeller
+	cd build-clang && $(FDO) build --lto=thin -s=../clang/FDO_test.yaml -i --pgo --propeller
 	make instrumented.bench
 	make labeled.bench
-	cd build-clang && ../FDO test  --pgo --propeller
-	cd build-clang && ../FDO opt  --pgo --propeller
-	cd build-clang && ../FDO build --lto=thin -s=../clang/FDO_test.yaml -i --pgo-and-propeller
+	cd build-clang && $(FDO) test  --pgo --propeller
+	cd build-clang && $(FDO) opt  --pgo --propeller
+	cd build-clang && $(FDO) build --lto=thin -s=../clang/FDO_test.yaml -i --pgo-and-propeller
 	make labeled-pgo.bench
-	cd build-clang && ../FDO test --pgo-and-propeller
-	cd build-clang && ../FDO opt --pgo-and-propeller
+	cd build-clang && $(FDO) test --pgo-and-propeller
+	cd build-clang && $(FDO) opt --pgo-and-propeller
 
 clang:
 	mkdir -p build-clang
-	cd build-clang && ../FDO config $(LLVM) \
+	cd build-clang && $(FDO) config $(LLVM) \
+		-G Ninja \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_TARGETS_TO_BUILD=X86 \
 		-DLLVM_OPTIMIZED_TABLEGEN=On \
 		-DLLVM_ENABLE_PROJECTS="clang" 
+	
 %.bench:
 	mkdir -p clang/test/$(basename $@)
 	cd clang/test/$(basename $@) && cmake -G Ninja $(LLVM) \
