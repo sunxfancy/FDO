@@ -1,6 +1,17 @@
 PWD=$(shell pwd)
 LLVM=$(PWD)/../LLVM-IPRA/llvm
 FDO=$(PWD)/../install/FDO
+
+exmaple:
+	mkdir -p build-example
+	cd build-example && \
+		$(FDO) config ../demo && \
+		$(FDO) build --lto=thin --pgo --propeller && \
+		$(FDO) test --pgo --propeller && \
+		$(FDO) opt --pgo --propeller && \
+		$(FDO) test --pgo-and-propeller && \
+		$(FDO) opt --pgo-and-propeller
+
 run:
 	make clang
 	cd build-clang && $(FDO) build --lto=thin -s=../clang/FDO_test.yaml -i --pgo --propeller

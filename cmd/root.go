@@ -70,6 +70,8 @@ var configCmd = &cobra.Command{
 }
 
 func LoadSettings() (c Config, t TestScript) {
+	dir, _ := os.Getwd()
+	fmt.Println("Curent dir: ", dir)
 	c = LoadConfig("FDO_settings.yaml")
 	t = LoadTestScript(c.TestCfg)
 	return

@@ -24,39 +24,6 @@ func checkToolSets(name string, args ...string) bool {
 	return true
 }
 
-// t = full or thin
-func ltoFlags(t string) []string {
-	if t != "" {
-		t = "=" + t
-	}
-	return []string{"-flto" + t}
-}
-
-func labelFlags(use_lto string) []string {
-	var k = []string{
-		"-fuse-ld=lld",
-		"-funique-internal-linkage-names",
-		"-fbasic-block-sections=labels",
-	}
-	if use_lto != "" {
-		k = append(k, ltoFlags(use_lto)...)
-	}
-	return k
-}
-
-func labelUseFlags(use_lto string) []string {
-	cluster, _ := filepath.Abs("../labeled/cluster.txt")
-
-	var k = []string{
-		"-funique-internal-linkage-names",
-		"-fbasic-block-sections=list=" + cluster,
-	}
-	if use_lto != "" {
-		k = append(k, ltoFlags(use_lto)...)
-	}
-	return k
-}
-
 type CommandPath struct {
 	cmakePath          string
 	clangPath          string
@@ -70,13 +37,8 @@ type CommandPath struct {
 
 func (c Config) getAbs(p string) string {
 	if !filepath.IsAbs(p) {
-		cwd, _ := os.Getwd()
-		fmt.Println("currentPath: ", cwd)
-		fmt.Println("TestCfg: ", c.TestCfg)
 		test, _ := filepath.Abs(filepath.Dir(c.TestCfg))
-		fmt.Println("p: ", test)
 		p, _ = filepath.Abs(test + "/" + p)
-		fmt.Println("p: ", p)
 	}
 	return p
 }
@@ -271,8 +233,9 @@ func (f CMakeFlags) IPRA() CMakeFlags {
 }
 
 func (f CMakeFlags) LTO() CMakeFlags {
-	if f.lto == "" {
+	if f.lto != "" {
 		f.flags = append(f.flags, "-flto="+f.lto)
+		f.linker_flags = append(f.linker_flags, "-flto="+f.lto)
 	}
 	return f
 }
@@ -313,12 +276,15 @@ func (f CMakeFlags) Propeller(stage string) CMakeFlags {
 }
 
 func createAndMoveToFolder(name string) {
-	if os.MkdirAll(name, 0777) != nil {
+	err := os.MkdirAll(name, 0777)
+	if err != nil {
 		fmt.Println("mkdir faild: " + name)
+		panic(err)
 	}
-	path, _ := filepath.Abs("./" + name)
+	path, err := filepath.Abs("./" + name)
 	if os.Chdir(path) != nil {
 		fmt.Println("can not change to the path: " + path)
+		panic(err)
 	}
 }
 
@@ -470,6 +436,7 @@ func ConfigDir(source string, lto string, args []string) {
 	p, err := filepath.Abs(source)
 	if err != nil {
 		fmt.Println("can not get the path: " + source)
+		panic(err)
 	}
 	var config = Config{
 		Source: p,

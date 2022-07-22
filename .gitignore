@@ -2,4 +2,5 @@
 /.vscode/
 /demo-build/
 /build-clang/
+/build-example/
 /clang/

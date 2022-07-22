@@ -2,6 +2,6 @@ commands:
   - ./demo 
 
 binary: ./demo
-clangpath: /home/xiaofan/Workspace/propeller-opt-clang/install.dir/trunk/bin
-propellerpath: /home/xiaofan/Workspace/propeller-opt-clang/source.dir/propeller
-regpath: /home/xiaofan/Workspace/propeller-opt-clang/source.dir/autofdo/build/create_reg_prof
+clangpath: ../../install/llvm/bin
+propellerpath: ../../install/autofdo
+regpath: ../../install/autofdo/create_reg_prof
