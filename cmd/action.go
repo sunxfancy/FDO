@@ -258,12 +258,12 @@ func (f CMakeFlags) Propeller(stage string) CMakeFlags {
 			labeled += "-pgo"
 		}
 		if f.Install {
-			profdata_path, _ = filepath.Abs("../" + labeled + "/install/")
+			profdata_path, _ = filepath.Abs("../" + labeled + "/install")
 		} else {
-			profdata_path, _ = filepath.Abs("../" + labeled + "/")
+			profdata_path, _ = filepath.Abs("../" + labeled)
 		}
-		symorder := profdata_path + "symorder.txt"
-		cluster := profdata_path + "cluster.txt"
+		symorder := profdata_path + "/symorder.txt"
+		cluster := profdata_path + "/cluster.txt"
 
 		f.flags = append(f.flags, "-funique-internal-linkage-names", "-fbasic-block-sections=list="+cluster)
 		f.linker_flags = append(f.linker_flags, "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file="+symorder)
