@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
+// Run -v to check a tool is installed
 func checkToolSets(name string, args ...string) bool {
 	if len(args) == 0 {
 		args = []string{"-v"}
@@ -27,9 +29,7 @@ func ltoFlags(t string) []string {
 	if t != "" {
 		t = "=" + t
 	}
-	return []string{
-		"-flto" + t,
-	}
+	return []string{"-flto" + t}
 }
 
 func labelFlags(use_lto string) []string {
@@ -57,14 +57,6 @@ func labelUseFlags(use_lto string) []string {
 	return k
 }
 
-func toCMakeLinkerFlags(kind string, flags ...string) string {
-	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=%s", kind, strings.Join(flags, " "))
-}
-
-func pgoFlags() []string {
-	return []string{}
-}
-
 func toCMakeCompiler(lang string, path string) string {
 	return fmt.Sprintf("-DCMAKE_%s_COMPILER=%s", lang, path)
 }
@@ -75,8 +67,8 @@ func toCMakeFlags(lang string, flags ...string) string {
 }
 
 // kind = EXE or SHARED or MODULE
-func toLinkerFlags(kind string, flags ...string) string {
-	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=\"%s\"", kind, strings.Join(flags, " "))
+func toCMakeLinkerFlags(kind string, flags ...string) string {
+	return fmt.Sprintf("-DCMAKE_%s_LINKER_FLAGS=%s", kind, strings.Join(flags, " "))
 }
 
 type CommandPath struct {
@@ -140,6 +132,8 @@ func (c CommandPath) getPath(cmd string) string {
 		call = c.createLlvmProfPath
 	case "create_reg_prof":
 		call = c.createRegProfPath
+	default:
+		call = cmd
 	}
 	return call
 }
@@ -148,33 +142,32 @@ func (c CommandPath) PrintCommand(cmd string, args ...string) {
 	fmt.Printf("%s %s\n", c.getPath(cmd), strings.Join(args, " "))
 }
 
-func (c CommandPath) RunCommand(cmd string, args ...string) {
-	c.PrintCommand(cmd, args...)
-	command := exec.Command(c.getPath(cmd), args...)
-
+func RunWithMultiWriter(command *exec.Cmd) {
 	var stdBuffer bytes.Buffer
 	mw := io.MultiWriter(os.Stdout, &stdBuffer)
 
 	command.Stdout = mw
 	command.Stderr = mw
 	command.Run()
+}
+
+func (c CommandPath) RunCommand(cmd string, args ...string) {
+	c.PrintCommand(cmd, args...)
+	command := exec.Command(c.getPath(cmd), args...)
+	RunWithMultiWriter(command)
 }
 
 func (c CommandPath) RunShell(cmd string, env ...string) {
 	fmt.Println("RunShell: " + cmd)
 	s := strings.Split(cmd, " ")
-	command := exec.Command(s[0], s[1:]...)
+	command := exec.Command(c.getPath(s[0]), s[1:]...)
 	command.Env = os.Environ()
 	command.Env = append(command.Env, env...)
-
-	var stdBuffer bytes.Buffer
-	mw := io.MultiWriter(os.Stdout, &stdBuffer)
-
-	command.Stdout = mw
-	command.Stderr = mw
-	command.Run()
+	RunWithMultiWriter(command)
 }
 
+// This function will merge the arguments which has the same key
+// e.g. If we have -DCMAKE_C_FLAGS=-O3  -DCMAKE_C_FLAGS=-g will become -DCMAKE_C_FLAGS=-O3 -g
 func merge_args(args []string) []string {
 	var ans []string
 
@@ -215,10 +208,11 @@ func createCMakeArgs(c Config, t TestScript, flags []string, linker_flags []stri
 }
 
 func (cmd CommandPath) runCMakeBuild(c Config) {
+	numOfCores := runtime.NumCPU()
 	if c.Install {
-		cmd.RunCommand("cmake", "--build", ".", "-j", "8", "--target", "install")
+		cmd.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores), "--target", "install")
 	} else {
-		cmd.RunCommand("cmake", "--build", ".", "-j", "8")
+		cmd.RunCommand("cmake", "--build", ".", "-j", fmt.Sprint(numOfCores))
 	}
 }
 
@@ -230,7 +224,7 @@ func buildInstrumented(c Config, t TestScript) {
 	if os.Chdir(path) != nil {
 		fmt.Println("can not change to the path: " + path)
 	}
-	instrument_flags := []string{"-fprofile-instr-generate"}
+	instrument_flags := []string{fmt.Sprint("-f", c.Profile, "-generate")}
 	linker_flags := []string{"-fuse-ld=lld"}
 
 	var args = createCMakeArgs(c, t, instrument_flags, linker_flags)
@@ -263,7 +257,7 @@ func buildLabeledOnPGO(c Config, t TestScript) {
 	os.Chdir("labeled-pgo")
 
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{"-fuse-ld=lld", "-fprofile-instr-use=" + profdata_path}
+	flags := []string{"-fuse-ld=lld", fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
 	flags = append(flags, labelFlags(c.LTO)...)
 	linker_flags := []string{"-fuse-ld=lld"}
 	if c.LTO != "" {
@@ -301,7 +295,7 @@ func testPGO(c Config, t TestScript) {
 	cmd := t.getCommand(c)
 	moveToTestFolder(c, "instrumented")
 	for k, test := range t.Commands {
-		cmd.RunShell(test, "LLVM_PROFILE_FILE=PGO"+fmt.Sprint(k)+".profraw")
+		cmd.RunShell(test, fmt.Sprint("LLVM_PROFILE_FILE=PGO", k, ".profraw"))
 	}
 	moveBack(c)
 }
@@ -310,7 +304,7 @@ func testPropeller(c Config, t TestScript) {
 	cmd := t.getCommand(c)
 	moveToTestFolder(c, "labeled")
 	for k, test := range t.Commands {
-		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
+		cmd.RunShell(fmt.Sprint("perf record -e cycles:u -j any,u -o Propeller", k, ".data -- ", test))
 	}
 	moveBack(c)
 }
@@ -319,7 +313,7 @@ func testPGOAndPropeller(c Config, t TestScript) {
 	cmd := t.getCommand(c)
 	moveToTestFolder(c, "labeled-pgo")
 	for k, test := range t.Commands {
-		cmd.RunShell("perf record -e cycles:u -j any,u -o Propeller" + fmt.Sprint(k) + ".data -- " + test)
+		cmd.RunShell(fmt.Sprint("perf record -e cycles:u -j any,u -o Propeller", k, ".data -- ", test))
 	}
 	moveBack(c)
 }
@@ -359,7 +353,7 @@ func optPGO(c Config, t TestScript) {
 	}
 
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	flags := []string{fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
 	linker_flags := []string{"-fuse-ld=lld"}
 	if c.LTO != "" && c.IPRA {
 		linker_flags = append(linker_flags, "-Wl,-mllvm -Wl,-enable-ipra")
@@ -422,7 +416,7 @@ func optPGOAndPropeller(c Config, t TestScript) {
 	os.MkdirAll("final-opt", 0777)
 	os.Chdir("final-opt")
 	profdata_path, _ := filepath.Abs("../instrumented/PGO.profdata")
-	flags := []string{"-fprofile-instr-use=" + profdata_path}
+	flags := []string{fmt.Sprint("-f", c.Profile, "-use=") + profdata_path}
 	flags = append(flags, labelFlags(c.LTO)...)
 	symorder, _ := filepath.Abs("../labeled-pgo/symorder.txt")
 	linker_flags := []string{"-fuse-ld=lld", "-Wl,--no-warn-symbol-ordering", "-Wl,--symbol-ordering-file=" + symorder}

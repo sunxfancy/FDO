@@ -10,6 +10,7 @@ type Config struct {
 	Source  string
 	Args    []string
 	LTO     string
+	Profile string
 	TestCfg string
 	Install bool
 	IPRA    bool

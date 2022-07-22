@@ -13,7 +13,7 @@ import (
 var enablePGO, enablePropeller, enablePGOAndPropeller bool
 
 var jobs int
-var target, config, test_settings, lto string
+var target, config, test_settings, lto, profile string
 var test_after_install, ipra bool
 
 // rootCmd represents the base command when called without any subcommands
@@ -61,6 +61,7 @@ var buildCmd = &cobra.Command{
 		if lto != "" {
 			c.LTO = lto
 		}
+		c.Profile = profile
 		if test_settings == "" {
 			c.TestCfg = c.Source + "/FDO_test.yaml"
 		} else {
@@ -142,6 +143,7 @@ func init() {
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 1, "number of jobs")
 	buildCmd.Flags().StringVarP(&lto, "lto", "", "", "lto type (thin or full)")
 	buildCmd.Flags().BoolVarP(&ipra, "ipra", "", false, "enable ipra")
+	buildCmd.Flags().StringVarP(&profile, "ptype", "p", "profile", "profile type (profile, profile-sample, profile-instr, or cs-profile")
 	buildCmd.Flags().StringVarP(&target, "target", "t", "", "target of the build")
 	buildCmd.Flags().StringVarP(&config, "config", "", "", "config of the build")
 	buildCmd.Flags().StringVarP(&test_settings, "test-settings", "s", "", "the path of test settings")
