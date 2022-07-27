@@ -198,7 +198,7 @@ func (f CMakeFlags) createCMakeArgs(cmd CommandPath, t TestScript) []string {
 }
 
 func createDefaultFlags(c Config) CMakeFlags {
-	return CMakeFlags{c, []string{}, []string{"-fuse-ld=lld"}, ""}
+	return CMakeFlags{c, []string{"-fuse-ld=lld"}, []string{"-fuse-ld=lld"}, ""}
 }
 
 func (f CMakeFlags) PGO(stage string) CMakeFlags {
