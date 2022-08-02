@@ -128,19 +128,30 @@ var testCmd = &cobra.Command{
 	},
 }
 
+func filter(args []string) []string {
+	new_args := []string{}
+	for _, arg := range args {
+		if arg != "--pgo" && arg != "--propeller" && arg != "--pgo-and-propeller" {
+			new_args = append(new_args, arg)
+		}
+	}
+	return new_args
+}
+
 var optCmd = &cobra.Command{
 	Use:   "opt",
 	Short: "Optimize the project",
 	Run: func(cmd *cobra.Command, args []string) {
 		c, t := LoadSettings()
+		new_args := filter(args)
 		if enablePGO || enablePGOAndPropeller {
-			optPGO(c, t)
+			optPGO(c, t, new_args)
 		}
 		if enablePropeller {
-			optPropeller(c, t)
+			optPropeller(c, t, new_args)
 		}
 		if enablePGOAndPropeller {
-			optPGOAndPropeller(c, t)
+			optPGOAndPropeller(c, t, new_args)
 		}
 	},
 }

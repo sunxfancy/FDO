@@ -182,7 +182,7 @@ type CMakeFlags struct {
 	install_path string
 }
 
-func (f CMakeFlags) createCMakeArgs(cmd CommandPath, t TestScript) []string {
+func (f CMakeFlags) createCMakeArgs(cmd CommandPath, t TestScript, s ...string) []string {
 	var args = []string{
 		f.Source,
 		toCMakeCompiler("C", cmd.getPath("clang")), toCMakeCompiler("CXX", cmd.getPath("clang++")),
@@ -194,6 +194,7 @@ func (f CMakeFlags) createCMakeArgs(cmd CommandPath, t TestScript) []string {
 	}
 
 	args = append(args, f.Args...)
+	args = append(args, s...)
 	return merge_args(args)
 }
 
@@ -396,38 +397,38 @@ func searchProfraw() []string {
 }
 
 // build the optimized binary using PGO.profdata
-func optPGO(c Config, t TestScript) {
+func optPGO(c Config, t TestScript, args []string) {
 	cmd := t.getCommand(c)
 	createAndMoveToFolder("pgo-opt")
 
 	flags := createDefaultFlags(c).PGO("pgo-opt").IPRA().LTO()
-	var args = flags.createCMakeArgs(cmd, t)
+	var cargs = flags.createCMakeArgs(cmd, t, args...)
 
-	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", cargs...)
 	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
-func optPropeller(c Config, t TestScript) {
+func optPropeller(c Config, t TestScript, args []string) {
 	// First, convert the profile data
 	cmd := t.getCommand(c)
 	createAndMoveToFolder("labeled-opt")
 	flags := createDefaultFlags(c).Propeller("propeller-opt").IPRA().LTO()
-	var args = flags.createCMakeArgs(cmd, t)
+	var cargs = flags.createCMakeArgs(cmd, t, args...)
 
-	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", cargs...)
 	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
 
-func optPGOAndPropeller(c Config, t TestScript) {
+func optPGOAndPropeller(c Config, t TestScript, args []string) {
 	// First, convert the profile data
 	cmd := t.getCommand(c)
 	createAndMoveToFolder("final-pgo")
 	flags := createDefaultFlags(c).PGO("pgo-opt").Propeller("final-opt").IPRA().LTO()
-	var args = flags.createCMakeArgs(cmd, t)
+	var cargs = flags.createCMakeArgs(cmd, t, args...)
 
-	cmd.RunCommand("cmake", args...)
+	cmd.RunCommand("cmake", cargs...)
 	cmd.RunCMakeBuild(c)
 	os.Chdir("..")
 }
