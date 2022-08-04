@@ -46,7 +46,7 @@ func (c Config) getAbs(p string) string {
 func (t TestScript) getCommand(c Config) (cmd CommandPath) {
 	cmd = CommandPath{"cmake", "clang", "ld.lld", "perf", "llvm-profdata", "create_llvm_prof", "create_reg_prof", c.DryRun}
 	if t.ClangPath != "" {
-		cmd.clangPath = c.getAbs(t.ClangPath + "/clang")
+		cmd.clangPath = c.getAbs(t.ClangPath + "/clang-proxy")
 		cmd.lldPath = c.getAbs(t.ClangPath + "/ld.lld")
 		cmd.llvm_profdata = c.getAbs(t.ClangPath + "/llvm-profdata")
 	}
